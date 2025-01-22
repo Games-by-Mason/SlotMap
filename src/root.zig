@@ -33,7 +33,7 @@ pub const KeyOptions = struct {
 /// const value = slots.get(key).?;
 ///
 /// slots.remove(key);
-/// assert(!slots.exists(key));
+/// assert(!slots.containsKey(key));
 /// ```
 pub fn SlotMap(Value: type, key_options: KeyOptions) type {
     const Generation = enum(key_options.GenerationTag) {
@@ -155,8 +155,11 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
             };
         }
 
-        /// Returns true if the value associated with the given key still exists, false otherwise.
-        pub fn exists(self: @This(), key: Key) bool {
+        /// Returns true if the value associated with the given key still exists in the map,
+        /// false otherwise.
+        ///
+        /// Asserts that the key was once valid, unless the generation is set to invalid.
+        pub fn containsKey(self: @This(), key: Key) bool {
             if (key.generation == .invalid) return false;
             const generation = self.generations[key.index];
             assert(key.index < self.next_index); // This key has never had a value!
@@ -166,13 +169,13 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
 
         /// Retrieves the value associated with the given key, or `null` if it no longer exists.
         pub fn get(self: *const @This(), key: Key) ?*Value {
-            if (!self.exists(key)) return null;
+            if (!self.containsKey(key)) return null;
             return &self.values[key.index];
         }
 
         /// Removes the value associated with the given key. The key remains valid.
         pub fn remove(self: *@This(), key: Key) void {
-            if (!self.exists(key)) return;
+            if (!self.containsKey(key)) return;
             self.generations[key.index] = @enumFromInt(@intFromEnum(self.generations[key.index]) + 1);
             if (self.generations[key.index] == .invalid) {
                 self.saturated_generations += 1;
@@ -196,7 +199,7 @@ test "slot map" {
 
     // Make sure that checking for the none key doesn't trip any assertions when the slot map is
     // empty, and that it compares equal to itself.
-    try std.testing.expect(!slots.exists(.none));
+    try std.testing.expect(!slots.containsKey(.none));
     try std.testing.expect(@TypeOf(slots).Key.none.eql(.none));
 
     const a = try slots.put('a');
@@ -223,23 +226,23 @@ test "slot map" {
     try std.testing.expect(!a.eql(c));
     try std.testing.expect(!b.eql(c));
     try std.testing.expect(!a.eql(.none));
-    try std.testing.expect(!slots.exists(.none));
+    try std.testing.expect(!slots.containsKey(.none));
 
     try std.testing.expectError(error.Overflow, slots.put('d'));
 
-    try std.testing.expect(slots.exists(a));
+    try std.testing.expect(slots.containsKey(a));
     slots.remove(a);
     try std.testing.expectEqual(2, slots.count());
-    try std.testing.expect(!slots.exists(a));
+    try std.testing.expect(!slots.containsKey(a));
     slots.remove(a);
     try std.testing.expectEqual(2, slots.count());
-    try std.testing.expect(!slots.exists(a));
+    try std.testing.expect(!slots.containsKey(a));
 
     slots.remove(c);
     try std.testing.expectEqual(1, slots.count());
-    try std.testing.expect(!slots.exists(a));
-    try std.testing.expect(slots.exists(b));
-    try std.testing.expect(!slots.exists(c));
+    try std.testing.expect(!slots.containsKey(a));
+    try std.testing.expect(slots.containsKey(b));
+    try std.testing.expect(!slots.containsKey(c));
 
     try std.testing.expectEqual(null, slots.get(a));
     try std.testing.expectEqual('b', slots.get(b).?.*);
@@ -291,7 +294,7 @@ test "slot map" {
         try std.testing.expectEqual(e.index, e_new.index);
         slots.remove(e_new);
         try std.testing.expectEqual(0, slots.count());
-        try std.testing.expect(!slots.exists(e_new));
+        try std.testing.expect(!slots.containsKey(e_new));
     }
     try std.testing.expectEqual(1, slots.saturated_generations);
 
@@ -301,7 +304,7 @@ test "slot map" {
         try std.testing.expectEqual(d.index, d_new.index);
         slots.remove(d_new);
         try std.testing.expectEqual(0, slots.count());
-        try std.testing.expect(!slots.exists(d_new));
+        try std.testing.expect(!slots.containsKey(d_new));
     }
     try std.testing.expectEqual(2, slots.saturated_generations);
 
@@ -311,7 +314,7 @@ test "slot map" {
         try std.testing.expectEqual(b.index, b_new.index);
         slots.remove(b_new);
         try std.testing.expectEqual(0, slots.count());
-        try std.testing.expect(!slots.exists(b_new));
+        try std.testing.expect(!slots.containsKey(b_new));
     }
     try std.testing.expectEqual(3, slots.saturated_generations);
     try std.testing.expectEqual(0, slots.count());
