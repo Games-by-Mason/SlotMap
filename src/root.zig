@@ -61,11 +61,15 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
             ) !void {
                 _ = fmt;
                 _ = options;
-                try writer.print("0x{x}:", .{self.index});
-                if (self.generation == .invalid) {
-                    try writer.print("invalid", .{});
+                if (self.eql(.none)) {
+                    try writer.writeAll(".none");
                 } else {
-                    try writer.print("0x{x}", .{@intFromEnum(self.generation)});
+                    try writer.print("0x{x}:", .{self.index});
+                    if (self.generation == .invalid) {
+                        try writer.writeAll("invalid");
+                    } else {
+                        try writer.print("0x{x}", .{@intFromEnum(self.generation)});
+                    }
                 }
             }
 
