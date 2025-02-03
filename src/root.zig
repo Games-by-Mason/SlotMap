@@ -61,7 +61,7 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
             ) !void {
                 _ = fmt;
                 _ = options;
-                if (self.eql(.none)) {
+                if (self == Key.none) {
                     try writer.writeAll(".none");
                 } else {
                     try writer.print("0x{x}:", .{self.index});
@@ -71,11 +71,6 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
                         try writer.print("0x{x}", .{@intFromEnum(self.generation)});
                     }
                 }
-            }
-
-            /// Compares keys for equality.
-            pub fn eql(self: @This(), other: @This()) bool {
-                return self.index == other.index and self.generation == other.generation;
             }
         };
 
@@ -204,7 +199,7 @@ test "slot map" {
     // Make sure that checking for the none key doesn't trip any assertions when the slot map is
     // empty, and that it compares equal to itself.
     try std.testing.expect(!slots.containsKey(.none));
-    try std.testing.expect(@TypeOf(slots).Key.none.eql(.none));
+    try std.testing.expect(@TypeOf(slots).Key.none == @TypeOf(slots).Key.none);
 
     const a = try slots.put('a');
     try std.testing.expectEqual(0, a.index);
@@ -225,11 +220,11 @@ test "slot map" {
     try std.testing.expectEqual('b', slots.get(b).?.*);
     try std.testing.expectEqual('c', slots.get(c).?.*);
 
-    try std.testing.expect(a.eql(a));
-    try std.testing.expect(!a.eql(b));
-    try std.testing.expect(!a.eql(c));
-    try std.testing.expect(!b.eql(c));
-    try std.testing.expect(!a.eql(.none));
+    try std.testing.expect(a == a);
+    try std.testing.expect(a != b);
+    try std.testing.expect(a != c);
+    try std.testing.expect(b != c);
+    try std.testing.expect(a != @TypeOf(slots).Key.none);
     try std.testing.expect(!slots.containsKey(.none));
 
     try std.testing.expectError(error.Overflow, slots.put('d'));
@@ -252,21 +247,21 @@ test "slot map" {
     try std.testing.expectEqual('b', slots.get(b).?.*);
     try std.testing.expectEqual(null, slots.get(c));
 
-    try std.testing.expect(a.eql(a));
-    try std.testing.expect(!a.eql(b));
-    try std.testing.expect(!a.eql(c));
-    try std.testing.expect(!b.eql(c));
+    try std.testing.expect(a == a);
+    try std.testing.expect(a != b);
+    try std.testing.expect(a != c);
+    try std.testing.expect(b != c);
 
     const d = try slots.put('d');
     try std.testing.expectEqual(2, d.index);
     try std.testing.expectEqual(1, @intFromEnum(d.generation));
     try std.testing.expectEqual(2, slots.count());
 
-    try std.testing.expect(!c.eql(.none));
-    try std.testing.expect(!d.eql(a));
-    try std.testing.expect(!a.eql(b));
-    try std.testing.expect(!d.eql(c));
-    try std.testing.expect(d.eql(d));
+    try std.testing.expect(c != @TypeOf(slots).Key.none);
+    try std.testing.expect(d != a);
+    try std.testing.expect(a != b);
+    try std.testing.expect(d != c);
+    try std.testing.expect(d == d);
 
     const e = try slots.put('e');
     try std.testing.expectEqual(0, e.index);
