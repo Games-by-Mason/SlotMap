@@ -39,19 +39,74 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
     const Generation = enum(key_options.GenerationTag) {
         invalid = std.math.maxInt(key_options.GenerationTag),
         _,
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            if (self == .invalid) {
+                try writer.writeAll(".invalid");
+            } else {
+                try writer.print("0x{x}", .{@intFromEnum(self)});
+            }
+        }
     };
     const Index = key_options.Index;
 
     return struct {
         /// A persistent `SlotMap` key.
         pub const Key = packed struct {
-            /// A key that has never existed, and never will.
-            pub const none: @This() = .{ .index = 0, .generation = .invalid };
+            /// Similar to `Key`, but may be set to `.none`.
+            pub const Optional = packed struct {
+                pub const none: @This() = .{ .index = 0, .generation = .invalid };
+
+                index: Index,
+                generation: Generation,
+
+                /// Unwraps the optional key into `Key`, or returns `null` if it is `.none`.
+                pub fn unwrap(self: @This()) ?Key {
+                    if (self == none) return null;
+                    assert(self.generation != .invalid);
+                    return .{
+                        .index = self.index,
+                        .generation = self.generation,
+                    };
+                }
+
+                pub fn format(
+                    self: @This(),
+                    comptime fmt: []const u8,
+                    options: std.fmt.FormatOptions,
+                    writer: anytype,
+                ) !void {
+                    _ = fmt;
+                    _ = options;
+                    if (self.unwrap()) |key| {
+                        try writer.print("{}", .{key});
+                    } else {
+                        try writer.writeAll(".none");
+                    }
+                }
+            };
 
             /// The key's index. Points to the relevant data.
             index: Index,
             /// The key's generation, used to guarantee key uniqueness.
             generation: Generation,
+
+            /// Returns this key as an optional.
+            pub fn toOptional(self: @This()) Optional {
+                // Invalid is only allowed on optional keys.
+                assert(self.generation != .invalid);
+                return .{
+                    .index = self.index,
+                    .generation = self.generation,
+                };
+            }
 
             pub fn format(
                 self: @This(),
@@ -61,16 +116,8 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
             ) !void {
                 _ = fmt;
                 _ = options;
-                if (self == Key.none) {
-                    try writer.writeAll(".none");
-                } else {
-                    try writer.print("0x{x}:", .{self.index});
-                    if (self.generation == .invalid) {
-                        try writer.writeAll("invalid");
-                    } else {
-                        try writer.print("0x{x}", .{@intFromEnum(self.generation)});
-                    }
-                }
+                assert(self.generation != .invalid);
+                try writer.print("0x{x}:{}", .{ self.index, self.generation });
             }
         };
 
@@ -148,9 +195,11 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
 
             self.values[index] = value;
 
+            const generation = self.generations[index];
+            assert(generation != .invalid);
             return .{
                 .index = index,
-                .generation = self.generations[index],
+                .generation = generation,
             };
         }
 
@@ -196,10 +245,7 @@ test "slot map" {
     defer slots.deinit(std.testing.allocator);
     try std.testing.expectEqual(0, slots.count());
 
-    // Make sure that checking for the none key doesn't trip any assertions when the slot map is
-    // empty, and that it compares equal to itself.
-    try std.testing.expect(!slots.containsKey(.none));
-    try std.testing.expect(@TypeOf(slots).Key.none == @TypeOf(slots).Key.none);
+    try std.testing.expectEqual(null, @TypeOf(slots).Key.Optional.none.unwrap());
 
     const a = try slots.put('a');
     try std.testing.expectEqual(0, a.index);
@@ -224,8 +270,8 @@ test "slot map" {
     try std.testing.expect(a != b);
     try std.testing.expect(a != c);
     try std.testing.expect(b != c);
-    try std.testing.expect(a != @TypeOf(slots).Key.none);
-    try std.testing.expect(!slots.containsKey(.none));
+    try std.testing.expect(a.toOptional() != @TypeOf(slots).Key.Optional.none);
+    try std.testing.expect(a.toOptional().unwrap().? == a);
 
     try std.testing.expectError(error.Overflow, slots.put('d'));
 
@@ -257,7 +303,6 @@ test "slot map" {
     try std.testing.expectEqual(1, @intFromEnum(d.generation));
     try std.testing.expectEqual(2, slots.count());
 
-    try std.testing.expect(c != @TypeOf(slots).Key.none);
     try std.testing.expect(d != a);
     try std.testing.expect(a != b);
     try std.testing.expect(d != c);
@@ -324,4 +369,20 @@ test "slot map" {
     try std.testing.expectEqual(3, slots.capacity);
     try std.testing.expectEqual(0, slots.saturated_generations);
     try std.testing.expectEqual(0, slots.count());
+}
+
+// Basically just making sure it compiles
+test "format key" {
+    const Key = SlotMap(void, .{}).Key;
+    const Generation = @FieldType(Key, "generation");
+    try std.testing.expectFmt("0xa:0xb", "{}", .{Key{
+        .index = 10,
+        .generation = @enumFromInt(11),
+    }});
+    try std.testing.expectFmt("0xa:0xb", "{}", .{(Key{
+        .index = 10,
+        .generation = @enumFromInt(11),
+    }).toOptional()});
+    try std.testing.expectFmt(".invalid", "{}", .{Generation.invalid});
+    try std.testing.expectFmt(".none", "{}", .{Key.Optional.none});
 }
