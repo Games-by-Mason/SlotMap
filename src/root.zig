@@ -167,8 +167,8 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
             self.* = undefined;
         }
 
-        /// Resets the slot map. Clears stored values and allows for reuse of all keys.
-        pub fn reset(self: *@This()) void {
+        /// Clears all values and recycles all keys.
+        pub fn recycleAll(self: *@This()) void {
             self.* = .{
                 .capacity = self.capacity,
                 .saturated_generations = 0,
@@ -231,6 +231,13 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
                 self.free[self.free_count] = key.index;
                 self.free_count += 1;
             }
+        }
+
+        /// Similar to `remove`, but allows the key to be reused in the future.
+        pub fn recycle(self: *@This(), key: Key) void {
+            if (!self.containsKey(key)) return;
+            self.free[self.free_count] = key.index;
+            self.free_count += 1;
         }
 
         /// Returns the number of values currently stored.
@@ -365,10 +372,35 @@ test "slot map" {
 
     try std.testing.expectError(error.Overflow, slots.put('z'));
 
-    slots.reset();
+    slots.recycleAll();
     try std.testing.expectEqual(3, slots.capacity);
     try std.testing.expectEqual(0, slots.saturated_generations);
     try std.testing.expectEqual(0, slots.count());
+}
+
+test "recycle key" {
+    var slots: SlotMap(u8, .{}) = try .init(std.testing.allocator, 3);
+    defer slots.deinit(std.testing.allocator);
+    try std.testing.expectEqual(0, slots.count());
+
+    try std.testing.expectEqual(null, @TypeOf(slots).Key.Optional.none.unwrap());
+
+    const a = try slots.put('a');
+    try std.testing.expectEqual(0, a.index);
+    try std.testing.expectEqual(0, @intFromEnum(a.generation));
+    try std.testing.expectEqual(1, slots.count());
+
+    slots.recycle(a);
+
+    const b = try slots.put('b');
+    try std.testing.expectEqual(0, b.index);
+    try std.testing.expectEqual(0, @intFromEnum(b.generation));
+    try std.testing.expectEqual(1, slots.count());
+
+    const c = try slots.put('c');
+    try std.testing.expectEqual(1, c.index);
+    try std.testing.expectEqual(0, @intFromEnum(c.generation));
+    try std.testing.expectEqual(2, slots.count());
 }
 
 // Basically just making sure it compiles
