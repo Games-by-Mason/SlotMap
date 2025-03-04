@@ -1,5 +1,6 @@
 .{
-    .name = "slot_map",
+    .name = .slot_map,
+    .fingerprint = 0x199f856fcba47c5,
     .version = "0.0.0",
     .minimum_zig_version = "0.14.0-dev.2544+94df665fe",
     .dependencies = .{},
