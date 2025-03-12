@@ -37,7 +37,8 @@ pub const KeyOptions = struct {
 /// ```
 pub fn SlotMap(Value: type, key_options: KeyOptions) type {
     const Generation = enum(key_options.GenerationTag) {
-        invalid = std.math.maxInt(key_options.GenerationTag),
+        invalid = 0,
+        first = 1,
         _,
 
         pub fn format(
@@ -124,9 +125,9 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
         /// The max number of values this slot map can hold simultaneously.
         capacity: usize,
 
-        /// The number of slot generations that have been fully saturated. For most use cases, the
-        /// capacity should be set high enough that this value remains 0.
-        saturated_generations: usize,
+        /// The number of slots with saturated generations. For most use cases, the capacity should
+        /// be set high enough that this value remains 0.
+        saturated: usize,
 
         generations: []Generation,
         values: []Value,
@@ -150,7 +151,7 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
 
             return .{
                 .capacity = capacity,
-                .saturated_generations = 0,
+                .saturated = 0,
                 .generations = generations,
                 .values = values,
                 .next_index = 0,
@@ -171,7 +172,7 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
         pub fn recycleAll(self: *@This()) void {
             self.* = .{
                 .capacity = self.capacity,
-                .saturated_generations = 0,
+                .saturated = 0,
                 .generations = self.generations,
                 .values = self.values,
                 .next_index = 0,
@@ -189,7 +190,7 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
                 if (self.next_index >= self.capacity) return error.Overflow;
                 const index = self.next_index;
                 self.next_index += 1;
-                self.generations[index] = @enumFromInt(0);
+                self.generations[index] = .first;
                 break :b @intCast(index);
             };
 
@@ -208,11 +209,16 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
         ///
         /// Asserts that the key was once valid, unless the generation is set to invalid.
         pub fn containsKey(self: @This(), key: Key) bool {
-            if (key.generation == .invalid) return false;
-            const generation = self.generations[key.index];
-            assert(key.index < self.next_index); // This key has never had a value!
-            assert(@intFromEnum(key.generation) <= @intFromEnum(generation)); // This key has never had a value!
-            return key.generation == generation;
+            // Get the current generation
+            const gen = self.generations[key.index];
+
+            // Check that this key was once or is currently valid
+            assert(key.generation != .invalid);
+            assert(key.index < self.next_index);
+            assert(gen == .invalid or @intFromEnum(key.generation) <= @intFromEnum(gen));
+
+            // Check if the key is currently valid
+            return key.generation == gen;
         }
 
         /// Retrieves the value associated with the given key, or `null` if it no longer exists.
@@ -224,9 +230,9 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
         /// Removes the value associated with the given key. The key remains valid.
         pub fn remove(self: *@This(), key: Key) void {
             if (!self.containsKey(key)) return;
-            self.generations[key.index] = @enumFromInt(@intFromEnum(self.generations[key.index]) + 1);
+            self.generations[key.index] = @enumFromInt(@intFromEnum(self.generations[key.index]) +% 1);
             if (self.generations[key.index] == .invalid) {
-                self.saturated_generations += 1;
+                self.saturated += 1;
             } else {
                 self.free[self.free_count] = key.index;
                 self.free_count += 1;
@@ -242,7 +248,7 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
 
         /// Returns the number of values currently stored.
         pub fn count(self: @This()) usize {
-            return self.next_index - self.free_count - self.saturated_generations;
+            return self.next_index - self.free_count - self.saturated;
         }
     };
 }
@@ -256,17 +262,17 @@ test "slot map" {
 
     const a = try slots.put('a');
     try std.testing.expectEqual(0, a.index);
-    try std.testing.expectEqual(0, @intFromEnum(a.generation));
+    try std.testing.expectEqual(1, @intFromEnum(a.generation));
     try std.testing.expectEqual(1, slots.count());
 
     const b = try slots.put('b');
     try std.testing.expectEqual(1, b.index);
-    try std.testing.expectEqual(0, @intFromEnum(b.generation));
+    try std.testing.expectEqual(1, @intFromEnum(b.generation));
     try std.testing.expectEqual(2, slots.count());
 
     const c = try slots.put('c');
     try std.testing.expectEqual(2, c.index);
-    try std.testing.expectEqual(0, @intFromEnum(c.generation));
+    try std.testing.expectEqual(1, @intFromEnum(c.generation));
     try std.testing.expectEqual(3, slots.count());
 
     try std.testing.expectEqual('a', slots.get(a).?.*);
@@ -307,7 +313,7 @@ test "slot map" {
 
     const d = try slots.put('d');
     try std.testing.expectEqual(2, d.index);
-    try std.testing.expectEqual(1, @intFromEnum(d.generation));
+    try std.testing.expectEqual(2, @intFromEnum(d.generation));
     try std.testing.expectEqual(2, slots.count());
 
     try std.testing.expect(d != a);
@@ -317,7 +323,7 @@ test "slot map" {
 
     const e = try slots.put('e');
     try std.testing.expectEqual(0, e.index);
-    try std.testing.expectEqual(1, @intFromEnum(e.generation));
+    try std.testing.expectEqual(2, @intFromEnum(e.generation));
     try std.testing.expectEqual(3, slots.count());
 
     try std.testing.expectError(error.Overflow, slots.put('f'));
@@ -333,11 +339,11 @@ test "slot map" {
     slots.remove(d);
     slots.remove(e);
     try std.testing.expectEqual(0, slots.count());
-    slots.generations[b.index] = @enumFromInt(std.math.maxInt(u32) - 2);
-    slots.generations[d.index] = @enumFromInt(std.math.maxInt(u32) - 2);
-    slots.generations[e.index] = @enumFromInt(std.math.maxInt(u32) - 2);
+    slots.generations[b.index] = @enumFromInt(std.math.maxInt(u32) - 1);
+    slots.generations[d.index] = @enumFromInt(std.math.maxInt(u32) - 1);
+    slots.generations[e.index] = @enumFromInt(std.math.maxInt(u32) - 1);
 
-    try std.testing.expectEqual(0, slots.saturated_generations);
+    try std.testing.expectEqual(0, slots.saturated);
 
     for (0..2) |_| {
         const e_new = try slots.put('z');
@@ -347,7 +353,7 @@ test "slot map" {
         try std.testing.expectEqual(0, slots.count());
         try std.testing.expect(!slots.containsKey(e_new));
     }
-    try std.testing.expectEqual(1, slots.saturated_generations);
+    try std.testing.expectEqual(1, slots.saturated);
 
     for (0..2) |_| {
         const d_new = try slots.put('z');
@@ -357,7 +363,7 @@ test "slot map" {
         try std.testing.expectEqual(0, slots.count());
         try std.testing.expect(!slots.containsKey(d_new));
     }
-    try std.testing.expectEqual(2, slots.saturated_generations);
+    try std.testing.expectEqual(2, slots.saturated);
 
     for (0..2) |_| {
         const b_new = try slots.put('z');
@@ -367,14 +373,14 @@ test "slot map" {
         try std.testing.expectEqual(0, slots.count());
         try std.testing.expect(!slots.containsKey(b_new));
     }
-    try std.testing.expectEqual(3, slots.saturated_generations);
+    try std.testing.expectEqual(3, slots.saturated);
     try std.testing.expectEqual(0, slots.count());
 
     try std.testing.expectError(error.Overflow, slots.put('z'));
 
     slots.recycleAll();
     try std.testing.expectEqual(3, slots.capacity);
-    try std.testing.expectEqual(0, slots.saturated_generations);
+    try std.testing.expectEqual(0, slots.saturated);
     try std.testing.expectEqual(0, slots.count());
 }
 
@@ -387,19 +393,19 @@ test "recycle key" {
 
     const a = try slots.put('a');
     try std.testing.expectEqual(0, a.index);
-    try std.testing.expectEqual(0, @intFromEnum(a.generation));
+    try std.testing.expectEqual(1, @intFromEnum(a.generation));
     try std.testing.expectEqual(1, slots.count());
 
     slots.recycle(a);
 
     const b = try slots.put('b');
     try std.testing.expectEqual(0, b.index);
-    try std.testing.expectEqual(0, @intFromEnum(b.generation));
+    try std.testing.expectEqual(1, @intFromEnum(b.generation));
     try std.testing.expectEqual(1, slots.count());
 
     const c = try slots.put('c');
     try std.testing.expectEqual(1, c.index);
-    try std.testing.expectEqual(0, @intFromEnum(c.generation));
+    try std.testing.expectEqual(1, @intFromEnum(c.generation));
     try std.testing.expectEqual(2, slots.count());
 }
 
