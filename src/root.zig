@@ -35,7 +35,7 @@ pub const KeyOptions = struct {
 /// slots.remove(key);
 /// assert(!slots.containsKey(key));
 /// ```
-pub fn SlotMap(Value: type, key_options: KeyOptions) type {
+pub fn SlotMap(Val: type, key_options: KeyOptions) type {
     const Generation = enum(key_options.GenerationTag) {
         invalid = 0,
         first = 1,
@@ -121,6 +121,9 @@ pub fn SlotMap(Value: type, key_options: KeyOptions) type {
                 try writer.print("0x{x}:{}", .{ self.index, self.generation });
             }
         };
+
+        /// The type of the associated values.
+        pub const Value = Val;
 
         /// The max number of values this slot map can hold simultaneously.
         capacity: usize,
