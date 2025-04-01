@@ -125,6 +125,12 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
         /// The type of the associated values.
         pub const Value = Val;
 
+        /// A slot in the slot map.
+        pub const Slot = struct {
+            generation: Generation,
+            value: Value,
+        };
+
         /// The max number of values this slot map can hold simultaneously.
         capacity: usize,
 
@@ -132,8 +138,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
         /// be set high enough that this value remains 0.
         saturated: usize,
 
-        generations: []Generation,
-        values: []Value,
+        slots: []Slot,
         next_index: usize,
         free: []Index,
         free_count: usize,
@@ -143,11 +148,8 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
             assert(capacity <= std.math.maxInt(Index));
             comptime assert(std.math.maxInt(Index) < std.math.maxInt(usize)); // For `next_index`
 
-            const generations = try gpa.alloc(Generation, capacity);
-            errdefer gpa.free(generations);
-
-            const values = try gpa.alloc(Value, capacity);
-            errdefer gpa.free(values);
+            const slots = try gpa.alloc(Slot, capacity);
+            errdefer gpa.free(slots);
 
             const free = try gpa.alloc(Index, capacity);
             errdefer gpa.free(free);
@@ -155,8 +157,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
             return .{
                 .capacity = capacity,
                 .saturated = 0,
-                .generations = generations,
-                .values = values,
+                .slots = slots,
                 .next_index = 0,
                 .free = free,
                 .free_count = 0,
@@ -165,8 +166,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
 
         /// Destroys the slot map.
         pub fn deinit(self: *@This(), gpa: Allocator) void {
-            gpa.free(self.generations);
-            gpa.free(self.values);
+            gpa.free(self.slots);
             gpa.free(self.free);
             self.* = undefined;
         }
@@ -176,8 +176,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
             self.* = .{
                 .capacity = self.capacity,
                 .saturated = 0,
-                .generations = self.generations,
-                .values = self.values,
+                .slots = self.slots,
                 .next_index = 0,
                 .free = self.free,
                 .free_count = 0,
@@ -193,13 +192,13 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
                 if (self.next_index >= self.capacity) return error.Overflow;
                 const index = self.next_index;
                 self.next_index += 1;
-                self.generations[index] = .first;
+                self.slots[index].generation = .first;
                 break :b @intCast(index);
             };
 
-            self.values[index] = value;
+            self.slots[index].value = value;
 
-            const generation = self.generations[index];
+            const generation = self.slots[index].generation;
             assert(generation != .invalid);
             return .{
                 .index = index,
@@ -213,7 +212,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
         /// Asserts that the key was once valid, unless the generation is set to invalid.
         pub fn containsKey(self: @This(), key: Key) bool {
             // Get the current generation
-            const gen = self.generations[key.index];
+            const gen = self.slots[key.index].generation;
 
             // Check that this key was once or is currently valid
             assert(key.generation != .invalid);
@@ -227,14 +226,15 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
         /// Retrieves the value associated with the given key, or `null` if it no longer exists.
         pub fn get(self: *const @This(), key: Key) ?*Value {
             if (!self.containsKey(key)) return null;
-            return &self.values[key.index];
+            return &self.slots[key.index].value;
         }
 
         /// Removes the value associated with the given key. The key remains valid.
         pub fn remove(self: *@This(), key: Key) void {
             if (!self.containsKey(key)) return;
-            self.generations[key.index] = @enumFromInt(@intFromEnum(self.generations[key.index]) +% 1);
-            if (self.generations[key.index] == .invalid) {
+            self.slots[key.index].generation =
+                @enumFromInt(@intFromEnum(self.slots[key.index].generation) +% 1);
+            if (self.slots[key.index].generation == .invalid) {
                 self.saturated += 1;
             } else {
                 self.free[self.free_count] = key.index;
@@ -342,9 +342,9 @@ test "slot map" {
     slots.remove(d);
     slots.remove(e);
     try std.testing.expectEqual(0, slots.count());
-    slots.generations[b.index] = @enumFromInt(std.math.maxInt(u32) - 1);
-    slots.generations[d.index] = @enumFromInt(std.math.maxInt(u32) - 1);
-    slots.generations[e.index] = @enumFromInt(std.math.maxInt(u32) - 1);
+    slots.slots[b.index].generation = @enumFromInt(std.math.maxInt(u32) - 1);
+    slots.slots[d.index].generation = @enumFromInt(std.math.maxInt(u32) - 1);
+    slots.slots[e.index].generation = @enumFromInt(std.math.maxInt(u32) - 1);
 
     try std.testing.expectEqual(0, slots.saturated);
 
