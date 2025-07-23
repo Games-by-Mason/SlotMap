@@ -41,14 +41,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
         first = 1,
         _,
 
-        pub fn format(
-            self: @This(),
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
             if (self == .invalid) {
                 try writer.writeAll(".invalid");
             } else {
@@ -78,16 +71,9 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
                     };
                 }
 
-                pub fn format(
-                    self: @This(),
-                    comptime fmt: []const u8,
-                    options: std.fmt.FormatOptions,
-                    writer: anytype,
-                ) !void {
-                    _ = fmt;
-                    _ = options;
+                pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
                     if (self.unwrap()) |key| {
-                        try writer.print("{}", .{key});
+                        try writer.print("{f}", .{key});
                     } else {
                         try writer.writeAll(".none");
                     }
@@ -109,16 +95,9 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
                 };
             }
 
-            pub fn format(
-                self: @This(),
-                comptime fmt: []const u8,
-                options: std.fmt.FormatOptions,
-                writer: anytype,
-            ) !void {
-                _ = fmt;
-                _ = options;
+            pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
                 assert(self.generation != .invalid);
-                try writer.print("0x{x}:{}", .{ self.index, self.generation });
+                try writer.print("0x{x}:{f}", .{ self.index, self.generation });
             }
         };
 
@@ -416,14 +395,14 @@ test "recycle key" {
 test "format key" {
     const Key = SlotMap(void, .{}).Key;
     const Generation = @FieldType(Key, "generation");
-    try std.testing.expectFmt("0xa:0xb", "{}", .{Key{
+    try std.testing.expectFmt("0xa:0xb", "{f}", .{Key{
         .index = 10,
         .generation = @enumFromInt(11),
     }});
-    try std.testing.expectFmt("0xa:0xb", "{}", .{(Key{
+    try std.testing.expectFmt("0xa:0xb", "{f}", .{(Key{
         .index = 10,
         .generation = @enumFromInt(11),
     }).toOptional()});
-    try std.testing.expectFmt(".invalid", "{}", .{Generation.invalid});
-    try std.testing.expectFmt(".none", "{}", .{Key.Optional.none});
+    try std.testing.expectFmt(".invalid", "{f}", .{Generation.invalid});
+    try std.testing.expectFmt(".none", "{f}", .{Key.Optional.none});
 }
