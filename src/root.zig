@@ -36,24 +36,24 @@ pub const KeyOptions = struct {
 /// assert(!slots.containsKey(key));
 /// ```
 pub fn SlotMap(Val: type, key_options: KeyOptions) type {
-    const Generation = enum(key_options.GenerationTag) {
-        invalid = 0,
-        first = 1,
-        _,
-
-        pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
-            if (self == .invalid) {
-                try writer.writeAll(".invalid");
-            } else {
-                try writer.print("0x{x}", .{@intFromEnum(self)});
-            }
-        }
-    };
-    const Index = key_options.Index;
-
     return struct {
         /// A persistent `SlotMap` key.
         pub const Key = packed struct {
+            pub const Generation = enum(key_options.GenerationTag) {
+                invalid = 0,
+                first = 1,
+                _,
+
+                pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
+                    if (self == .invalid) {
+                        try writer.writeAll(".invalid");
+                    } else {
+                        try writer.print("0x{x}", .{@intFromEnum(self)});
+                    }
+                }
+            };
+            pub const Index = key_options.Index;
+
             /// Similar to `Key`, but may be set to `.none`.
             pub const Optional = packed struct {
                 pub const none: @This() = .{ .index = 0, .generation = .invalid };
@@ -106,7 +106,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
 
         /// A slot in the slot map.
         pub const Slot = struct {
-            generation: Generation,
+            generation: Key.Generation,
             value: Value,
         };
 
@@ -119,18 +119,18 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
 
         slots: []Slot,
         next_index: usize,
-        free: []Index,
+        free: []Key.Index,
         free_count: usize,
 
         /// Initializes a slot map with the given capacity.
         pub fn init(gpa: Allocator, capacity: usize) Allocator.Error!@This() {
-            assert(capacity <= std.math.maxInt(Index));
-            comptime assert(std.math.maxInt(Index) < std.math.maxInt(usize)); // For `next_index`
+            assert(capacity <= std.math.maxInt(Key.Index));
+            comptime assert(std.math.maxInt(Key.Index) < std.math.maxInt(usize)); // For `next_index`
 
             const slots = try gpa.alloc(Slot, capacity);
             errdefer gpa.free(slots);
 
-            const free = try gpa.alloc(Index, capacity);
+            const free = try gpa.alloc(Key.Index, capacity);
             errdefer gpa.free(free);
 
             return .{
@@ -164,7 +164,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
 
         /// Inserts an item into the slot map, returning a persistent unique key.
         pub fn put(self: *@This(), value: Value) error{Overflow}!Key {
-            const index: Index = if (self.free_count > 0) b: {
+            const index: Key.Index = if (self.free_count > 0) b: {
                 self.free_count -= 1;
                 break :b self.free[self.free_count];
             } else b: {
@@ -394,7 +394,6 @@ test "recycle key" {
 // Basically just making sure it compiles
 test "format key" {
     const Key = SlotMap(void, .{}).Key;
-    const Generation = @FieldType(Key, "generation");
     try std.testing.expectFmt("0xa:0xb", "{f}", .{Key{
         .index = 10,
         .generation = @enumFromInt(11),
@@ -403,6 +402,6 @@ test "format key" {
         .index = 10,
         .generation = @enumFromInt(11),
     }).toOptional()});
-    try std.testing.expectFmt(".invalid", "{f}", .{Generation.invalid});
+    try std.testing.expectFmt(".invalid", "{f}", .{Key.Generation.invalid});
     try std.testing.expectFmt(".none", "{f}", .{Key.Optional.none});
 }
