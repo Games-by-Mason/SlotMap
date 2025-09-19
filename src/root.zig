@@ -78,6 +78,10 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
                         try writer.writeAll(".none");
                     }
                 }
+
+                pub fn eql(self: @This(), other: @This()) bool {
+                    return self.index == other.index and self.generation == other.generation;
+                }
             };
 
             /// The key's index. Points to the relevant data.
@@ -98,6 +102,10 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
             pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
                 assert(self.generation != .invalid);
                 try writer.print("0x{x}:{f}", .{ self.index, self.generation });
+            }
+
+            pub fn eql(self: @This(), other: @This()) bool {
+                return self.index == other.index and self.generation == other.generation;
             }
         };
 
@@ -404,4 +412,22 @@ test "format key" {
     }).toOptional()});
     try std.testing.expectFmt(".invalid", "{f}", .{Key.Generation.invalid});
     try std.testing.expectFmt(".none", "{f}", .{Key.Optional.none});
+}
+
+test "eql" {
+    const Key = SlotMap(void, .{}).Key;
+    const a: Key = .{ .index = 1, .generation = @enumFromInt(2) };
+    const b: Key = .{ .index = 2, .generation = @enumFromInt(2) };
+    const c: Key = .{ .index = 1, .generation = @enumFromInt(3) };
+
+    try std.testing.expect(a.eql(a));
+    try std.testing.expect(!a.eql(b));
+    try std.testing.expect(!a.eql(c));
+
+    try std.testing.expect(a.toOptional().eql(a.toOptional()));
+    try std.testing.expect(!a.toOptional().eql(b.toOptional()));
+    try std.testing.expect(!a.toOptional().eql(c.toOptional()));
+    try std.testing.expect(!a.toOptional().eql(.none));
+    try std.testing.expect(!Key.Optional.none.eql(a.toOptional()));
+    try std.testing.expect(Key.Optional.none.eql(.none));
 }
