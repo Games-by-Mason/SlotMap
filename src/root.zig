@@ -48,7 +48,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
                     if (self == .invalid) {
                         try writer.writeAll(".invalid");
                     } else {
-                        try writer.print("{x}", .{@intFromEnum(self)});
+                        try writer.print("0x{X}", .{@intFromEnum(self)});
                     }
                 }
             };
@@ -101,7 +101,7 @@ pub fn SlotMap(Val: type, key_options: KeyOptions) type {
 
             pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
                 assert(self.generation != .invalid);
-                try writer.print("{x}:{f}", .{ self.index, self.generation });
+                try writer.print("0x{X}:{X}", .{ self.index, @intFromEnum(self.generation) });
             }
 
             pub fn eql(self: @This(), other: @This()) bool {
@@ -402,15 +402,16 @@ test "recycle key" {
 // Basically just making sure it compiles
 test "format key" {
     const Key = SlotMap(void, .{}).Key;
-    try std.testing.expectFmt("a:b", "{f}", .{Key{
+    try std.testing.expectFmt("0xA:B", "{f}", .{Key{
         .index = 10,
         .generation = @enumFromInt(11),
     }});
-    try std.testing.expectFmt("a:b", "{f}", .{(Key{
+    try std.testing.expectFmt("0xA:B", "{f}", .{(Key{
         .index = 10,
         .generation = @enumFromInt(11),
     }).toOptional()});
     try std.testing.expectFmt(".invalid", "{f}", .{Key.Generation.invalid});
+    try std.testing.expectFmt("0xF", "{f}", .{@as(Key.Generation, @enumFromInt(0xf))});
     try std.testing.expectFmt(".none", "{f}", .{Key.Optional.none});
 }
 
