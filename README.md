@@ -11,6 +11,8 @@ return `error.Overflow` on `put`.
 
 Inspired by [SergeyMakeev/slot_map](https://github.com/SergeyMakeev/slot_map).
 
+Documentation available [here](https://docs.gamesbymason.com/slot_map/), you can generate up to date docs yourself with `zig build docs`.
+
 # Example
 ```zig
 var slots: SlotMap(u8, []const u8) = try .init(gpa, 100);
